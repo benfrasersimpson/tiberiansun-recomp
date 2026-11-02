@@ -70,7 +70,22 @@ It is Red Alert 2's method (src/runtime/hdvox.c, run_lift.py
   unit really got (the Z-buffer's say), from the battlefield before and after;
 - the copy into the primary (`0x0048B590`) ends a frame, and the records are
   published; the presenter shows a record's four 2x pixels wherever the
-  finished frame still shows exactly what the unit wrote there.
+  finished frame still shows exactly what the unit wrote there. Only a copy
+  of at least half the primary publishes, the battlefield's: the mouse's own
+  small copies come in the middle of a frame while the view scrolls, and
+  publishing at one split the frame's records, so the next picture showed
+  the units not yet drawn at 1x. The presenter applies the last two
+  published sets, the older first, so a picture taken just before a publish
+  still finds its own (Red Alert 2's issue #14).
+
+On Linux and macOS the presenter scales the 1x frame on the GPU and lays the
+units' 2x pixels over it (`hdvox_overlay`, pcrecomp's
+`hle_screen_overlay_hook`): the CPU writes only the units' pixels, not a 2x
+copy of the whole frame (`hdvox_compose`, still the Windows presenter's),
+the same picture pixel for pixel: 0 of 8.1 billion pixels differed, checked
+headless against `hdvox_compose`, at 0.007 ms a picture against 0.17 ms at
+640x400 on an M-series Mac (the full copy's cost grows with the
+resolution).
 
 While HD voxels are on, the voxel cache is off (`0x006354EC` gives
 `0x006354E0` the key -1), so every unit is rendered each frame; the three

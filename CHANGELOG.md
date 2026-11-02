@@ -28,6 +28,27 @@ versions follow [SemVer](https://semver.org/).
   lifted (21,369 functions, 0 errors) and built it, and the playtest suite
   passes 34 of 34, three at a time.
 
+### Changed
+- **HD vehicles are cheaper to draw on Linux and macOS** (Red Alert 2's
+  0.1.0 change): the window scales the 1x picture on the GPU and lays only
+  the units' 2x pixels over it (`hdvox_overlay`, pcrecomp's
+  `hle_screen_overlay_hook`), where the CPU built a 2x copy of the whole
+  frame for every picture. The same picture pixel for pixel (0 of 8.1
+  billion pixels differed, checked against the old path headless); at
+  640x400 on an M-series Mac 0.007 ms a picture instead of 0.17 ms, and the
+  old path's cost grew with the resolution. The 565-to-RGB conversion is a
+  table, which also speeds the Windows presenter's full compose.
+- **HD vehicles while the view scrolls** (Red Alert 2's issue #14): the 2x
+  records are published only at a copy of at least half the screen, the
+  battlefield's, not at the cursor's small copies in the middle of a frame,
+  and a picture uses the last two published sets, so one taken just before
+  a publish still finds its own. Here nearly every copy that carries
+  records is the whole battlefield (898 of 900 in a minute of right-drag
+  scrolling), so this mostly stops the cursor's copies from publishing a
+  half-drawn set.
+- `--rdrag x1,y1,x2,y2@s` on the native host: a scripted right-button drag,
+  the game's drag-scroll.
+
 ### Fixed
 - **A crash while scrolling in battle** (a bus error drawing the sidebar or
   the cursor at a small address): `DSurface::Unlock` (`0x0048B4D0`) set the

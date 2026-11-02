@@ -73,6 +73,13 @@ static int compose_hd(const uint8_t *px16, int pitch, int w, int h, uint32_t *ou
     hdvox_compose(px16, pitch, w, h, out);
     return 1;
 }
+/* The presenter scales the 1x frame itself; this gives it only the units' 2x
+ * overlay, so the CPU no longer upscales the whole frame (docs/voxels.md). */
+static int overlay_hd(const uint8_t *px16, int pitch, int w, int h, uint32_t *ov,
+                      int *dx, int *dy, int *dw, int *dh) {
+    if (!ts_vox_hd_on || !ts_vox_hd_show) return 0;
+    return hdvox_overlay(px16, pitch, w, h, ov, dx, dy, dw, dh);
+}
 
 /* ---- game-specific answers ------------------------------------------------ */
 
@@ -488,7 +495,8 @@ int main(int argc, char **argv) {
         }
     }
     hle_set_pump_hook(ts_pump);
-    hle_screen_compose_hook = compose_hd;
+    hle_screen_compose_hook = compose_hd;      /* the fallback: a whole 2x picture */
+    hle_screen_overlay_hook = overlay_hd;      /* the window: 1x base + 2x overlay */
     hle_on_exit = on_exit_close;
     if (g_record) {
         pthread_t t;

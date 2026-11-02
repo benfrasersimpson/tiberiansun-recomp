@@ -15,3 +15,13 @@ extern int ts_vox_hd_on, ts_vox_hd_show;
 /* The presenter's frame at 2x: frame16 the 1x frame (16-bit, pitch in bytes),
  * out 2w x 2h BGRX, with the units' 2x pixels where they still show. */
 void hdvox_compose(const uint8_t* frame16, int pitch, int w, int h, uint32_t* out);
+
+/* The HD layer as a sparse overlay, for a presenter that scales the 1x frame
+ * itself (SDL_Renderer): the CPU no longer upscales the whole frame (95% of
+ * hdvox_compose at 1080p, in Red Alert 2). ov is a 2w x 2h ARGB8888 buffer
+ * the caller keeps zeroed between resolution changes; this fills the units'
+ * 2x pixels opaque where they still show and leaves the rest transparent.
+ * *dx..*dh get the 2x sub-rect that changed since the last call (upload only
+ * that). Returns the overlay's scale, 2, if HD is live, 0 for none. */
+int hdvox_overlay(const uint8_t* frame16, int pitch, int w, int h, uint32_t* ov,
+                  int* dx, int* dy, int* dw, int* dh);
