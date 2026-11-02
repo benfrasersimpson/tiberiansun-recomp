@@ -11,8 +11,10 @@ cmake_minimum_required(VERSION 3.20)
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 project(ts C)
 
-if(NOT CMAKE_SIZEOF_VOID_P EQUAL 4)
-  message(FATAL_ERROR "the host must be 32-bit: use build.cmd (vcvarsall x86), or on Linux build-linux.sh")
+# The native hosts (Linux, macOS) may be 64-bit: the guest's memory is then
+# one block in the host (win32hle's guest_mem.c). The Windows host is 32-bit.
+if(NOT CMAKE_SIZEOF_VOID_P EQUAL 4 AND NOT (CMAKE_SYSTEM_NAME STREQUAL "Linux" OR APPLE))
+  message(FATAL_ERROR "the Windows host must be 32-bit: use build.cmd (vcvarsall x86)")
 endif()
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE RelWithDebInfo)
@@ -25,21 +27,44 @@ else()
   set(PCRECOMP "${CMAKE_SOURCE_DIR}/../pcrecomp" CACHE PATH "pcrecomp checkout")
 endif()
 file(GLOB GEN_SOURCES CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/src/recomp/gen/*.c")
+# macOS writes ._* metadata files beside sources on some external drives
+list(FILTER GEN_SOURCES EXCLUDE REGEX "/[.]_[^/]*$")
 if(NOT GEN_SOURCES)
   message(FATAL_ERROR "src/recomp/gen is empty -- run ./setup.sh (Setup.cmd on Windows) first: it lifts the game")
 endif()
 
-# ---- native Linux: the lifted C on runtime/win32hle (cmake/linux-i386.cmake)
-if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+# ---- native Linux and macOS: the lifted C on runtime/win32hle. 32-bit
+# (cmake/linux-i386.cmake) a guest address is a host address; 64-bit
+# (build-macos.sh, or Linux x86-64/arm64) it is an offset into the guest's
+# memory.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" OR APPLE)
   find_package(PkgConfig REQUIRED)
   pkg_check_modules(SDL2 REQUIRED IMPORTED_TARGET sdl2)
   pkg_check_modules(SDL2_TTF REQUIRED IMPORTED_TARGET SDL2_ttf)
   set(HLE ${PCRECOMP}/runtime/win32hle)
   file(GLOB HLE_SOURCES CONFIGURE_DEPENDS "${HLE}/*.c")
-  list(FILTER HLE_SOURCES EXCLUDE REGEX "_selftest\.c$")
+  list(FILTER HLE_SOURCES EXCLUDE REGEX "_selftest\.c$|/[.]_[^/]*$")
   add_executable(ts src/linux/main.c src/linux/blowfish.c src/linux/script.c src/linux/mods.c src/linux/menu.c src/runtime/hdvox.c ${HLE_SOURCES} ${GEN_SOURCES})
   target_include_directories(ts PRIVATE src/linux src/runtime src/recomp/gen ${HLE} ${PCRECOMP}/runtime/recomp32)
-  target_compile_definitions(ts PRIVATE RECOMP_RETADDR=0u RECOMP_FLAT_MEMORY RECOMP_LOCAL_REGS)
+  target_compile_definitions(ts PRIVATE RECOMP_RETADDR=0u RECOMP_LOCAL_REGS)
+  if(CMAKE_SIZEOF_VOID_P EQUAL 4)
+    target_compile_definitions(ts PRIVATE RECOMP_FLAT_MEMORY)
+  else()
+    # 64-bit: where the guest's 4 GB goes in the host. A fixed address lets
+    # the lifted code add a constant, not a global it reloads after every
+    # store. On a Mac 16 TB up is free on arm64 and x86-64 alike (above the
+    # executable, the shared cache and the system's heaps, below the
+    # stacks); on Linux, where some arm64 kernels give a process 512 GB, the
+    # default is wherever mmap puts it. Empty: wherever mmap puts it.
+    if(APPLE)
+      set(TS_MEM_BASE "0x100000000000ull" CACHE STRING "host address of the guest's 4 GB (empty: anywhere)")
+    else()
+      set(TS_MEM_BASE "" CACHE STRING "host address of the guest's 4 GB (empty: anywhere)")
+    endif()
+    if(TS_MEM_BASE)
+      target_compile_definitions(ts PRIVATE RECOMP_MEM_BASE=${TS_MEM_BASE})
+    endif()
+  endif()
   set(GEN_OPT "-O2" CACHE STRING "optimisation for the generated C")
   set_source_files_properties(${GEN_SOURCES} PROPERTIES COMPILE_OPTIONS "-w;${GEN_OPT};-fno-strict-aliasing;-fwrapv")
   target_compile_options(ts PRIVATE -fno-strict-aliasing -fwrapv)

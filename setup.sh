@@ -1,13 +1,14 @@
 #!/bin/bash
-# macOS and Linux setup: the same pipeline as Setup.cmd. On Linux the game is
-# built as a native program (build-linux.sh: no Wine); on a Mac, or on Linux
-# with --wine, the Windows exe is cross-compiled here and played under Wine
-# (CrossOver on a Mac). On a Mac Tiberian Sun has to be installed in a
-# CrossOver bottle; on Linux, from Steam (it runs it with Proton) or anywhere
-# else.
+# macOS and Linux setup: the same pipeline as Setup.cmd. The game is built as
+# a native program: on Linux a 32-bit one (build-linux.sh), on a Mac a 64-bit
+# one (build-macos.sh), with no Wine either way. With --wine the Windows exe
+# is cross-compiled here instead and played under Wine (CrossOver on a Mac).
+# The game is wherever your copy is: on a Mac a folder anywhere, or Steam for
+# Windows in a CrossOver bottle; on Linux from Steam (it runs it with Proton)
+# or anywhere else.
 #
 #   ./setup.sh                 # catalog, lift and build
-#   ./setup.sh --wine          # on Linux: the Windows exe, under Wine
+#   ./setup.sh --wine          # the Windows exe, under Wine (CrossOver on a Mac)
 #   ./setup.sh --force         # redo every step
 #   ./setup.sh --yes           # install what is missing without asking
 #   ./setup.sh --game-dir DIR  # the install to use, instead of searching Steam
@@ -32,7 +33,7 @@ while [ $# -gt 0 ]; do
   esac
   shift
 done
-MAC=0; [ "$(uname)" = Darwin ] && MAC=1 && NATIVE=0
+MAC=0; [ "$(uname)" = Darwin ] && MAC=1
 
 say()  { printf '%s\n' "$*"; }
 # "[n/N] what": the installer's progress bar reads these, as Setup.cmd's.
@@ -51,8 +52,15 @@ have() { command -v "$1" >/dev/null || ls /usr/lib/llvm-*/bin/"$1" >/dev/null 2>
 step "Checking the tools"
 if [ "$MAC" = 1 ]; then
   command -v brew >/dev/null || fail "Homebrew is needed: https://brew.sh"
+  if [ "$NATIVE" = 1 ]; then
+    # Apple's clang (the command line tools); SDL2 and SDL2_ttf
+    xcode-select -p >/dev/null 2>&1 || fail "Xcode's command line tools are needed: xcode-select --install"
+    formulas="cmake ninja pkgconf sdl2 sdl2_ttf uv"
+  else
+    formulas="llvm lld cmake ninja xwin uv"
+  fi
   need=()
-  for f in llvm lld cmake ninja xwin uv; do brew list --formula "$f" >/dev/null 2>&1 || need+=("$f"); done
+  for f in $formulas; do brew list --formula "$f" >/dev/null 2>&1 || need+=("$f"); done
   if [ ${#need[@]} -gt 0 ]; then
     ask "  Install ${need[*]} with Homebrew?" || fail "${need[*]} are required."
     brew install "${need[@]}"
@@ -149,7 +157,7 @@ if [ ! -d "$PCRECOMP/runtime/native32" ]; then
 fi
 # The native host is the lifted game on win32hle's DirectDraw, DirectSound and
 # windows, with its guest memory (guest_mem.c, which the Blowfish object is
-# allocated from); under Wine, callbacks into lifted code need DEP turned on
+# allocated from; on a Mac the guest's 4 GB in a 64-bit program); under Wine, callbacks into lifted code need DEP turned on
 # and a fetch that Wine reports as a read accepted (runtime/native32/native32.c).
 # And the F10 menu over the picture (hle_screen_menu, hle_screen_desktop).
 # An older clone has none of it: it is updated (pcrecomp's main has all).
@@ -167,11 +175,11 @@ if ! toolkit_ok && [ -d "$PCRECOMP/.git" ]; then
     git -C "$PCRECOMP" pull -q --ff-only || fail "could not update $PCRECOMP (local changes, or not on main?)."
   fi
 fi
-toolkit_ok || fail "$PCRECOMP is too old for this build: update it (git -C \"$PCRECOMP\" pull)."
+toolkit_ok || fail "$PCRECOMP is too old for this build: update it (git -C \"$PCRECOMP\" pull)$([ "$MAC" = 1 ] && [ "$NATIVE" = 1 ] && echo ", or ./setup.sh --wine for CrossOver")."
 export PCRECOMP
 say "  pcrecomp: $PCRECOMP"
 
-if [ "$MAC" = 1 ]; then
+if [ "$MAC" = 1 ] && [ "$NATIVE" = 0 ]; then
   WINE=/Applications/CrossOver.app/Contents/SharedSupport/CrossOver/bin/wine
   [ -x "$WINE" ] || fail "CrossOver is needed: https://www.codeweavers.com/crossover"
 fi
@@ -181,8 +189,9 @@ GAME_SUB="steamapps/common/Command & Conquer Tiberian Sun"
 if [ ! -e game ]; then
   found=""
   if [ "$MAC" = 1 ]; then
-    step "Finding Tiberian Sun in your CrossOver bottles"
-    candidates=("$HOME/Library/Application Support/CrossOver/Bottles"/*/drive_c/Program\ Files*/Steam/"$GAME_SUB")
+    step "Finding Tiberian Sun in your CrossOver bottles and Steam library"
+    candidates=("$HOME/Library/Application Support/CrossOver/Bottles"/*/drive_c/Program\ Files*/Steam/"$GAME_SUB"
+                "$HOME/Library/Application Support/Steam/$GAME_SUB")
   else
     step "Finding Tiberian Sun in your Steam libraries"
     candidates=()
@@ -209,7 +218,7 @@ if [ ! -e game ]; then
 fi
 GAME_DIR=$(cd game && pwd -P)
 say "  game/ -> $GAME_DIR"
-if [ "$MAC" = 1 ]; then
+if [ "$MAC" = 1 ] && [ "$NATIVE" = 0 ]; then
   case "$GAME_DIR" in
     */CrossOver/Bottles/*) BOTTLE=${GAME_DIR#*/CrossOver/Bottles/}; BOTTLE=${BOTTLE%%/*} ;;
     *) BOTTLE=${CX_BOTTLE:-Steam} ;;
@@ -241,21 +250,22 @@ else
   grep "lifted" work/lift.log | tail -1
 fi
 if [ "$NATIVE" = 1 ]; then
-  step "Building build-linux/ts (5 to 20 minutes)"
+  os=$([ "$MAC" = 1 ] && echo macos || echo linux)
+  step "Building build-$os/ts (5 to 20 minutes)"
   # always: the build only compiles what changed, so a pulled fix reaches it
-  [ "$FORCE" = 1 ] && rm -rf build-linux
-  ./build-linux.sh > work/build-linux.log 2>&1 || fail "the build failed: see work/build-linux.log"
+  [ "$FORCE" = 1 ] && rm -rf "build-$os"
+  ./build-$os.sh > "work/build-$os.log" 2>&1 || fail "the build failed: see work/build-$os.log"
 else
   step "Building build/ts.exe (10 to 30 minutes)"
   [ "$FORCE" = 1 ] && rm -rf build
   ./build.sh > work/build.log 2>&1 || fail "the build failed: see work/build.log"
 fi
 if [ "$NATIVE" = 1 ]; then
-  launcher="Tiberian Sun (recomp).sh"
+  launcher="Tiberian Sun (recomp).$([ "$MAC" = 1 ] && echo command || echo sh)"
   cat > "$launcher" <<EOF
 #!/bin/sh
 # Plays the recompiled game, natively: scaling F12, fullscreen F11.
-cd "\$(dirname "\$0")" && exec build-linux/ts --run "\$@"
+cd "\$(dirname "\$0")" && exec build-$os/ts --run "\$@"
 EOF
 elif [ "$MAC" = 1 ]; then
   launcher="Tiberian Sun (recomp).command"

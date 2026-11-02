@@ -26,7 +26,7 @@ for comparison.
   sharp at any size.
 - **Scaling** (F12): sharp-bilinear (the default), smooth, CRT, nearest, or
   whole multiples only.
-- **A settings menu** (F10, on Windows and native Linux): scaling, fullscreen,
+- **A settings menu** (F10, on Windows and natively on Linux and macOS): scaling, fullscreen,
   HD vehicles and the game's resolution, kept in `build\ts.ini`.
 - **High resolution and widescreen**: 1280x720 up to 3840x2160 in game, 21:9
   and 16:10 included, more
@@ -38,11 +38,11 @@ for comparison.
   resolution of the picture, from the game's own voxel models
   (docs/voxels.md).
 - **Windows, Linux and macOS**: on Windows the C runtime is linked in, so
-  there is no Visual C++ redistributable to install. On Linux the game also
-  runs **natively, with no Wine**: the same lifted C on pcrecomp's own
-  implementation of the Windows API, with SDL2 for the window and sound
-  ([Linux, native](#linux-native)). On macOS (and Linux) the exe is
-  cross-built with clang-cl and played under CrossOver or Wine
+  there is no Visual C++ redistributable to install. On Linux and macOS the
+  game also runs **natively, with no Wine**: the same lifted C on pcrecomp's
+  own implementation of the Windows API, with SDL2 for the window and sound
+  ([Linux, native](#linux-native), [macOS, native](#macos-native)). The exe
+  can also be cross-built with clang-cl and played under CrossOver or Wine
   ([macOS and Linux, under Wine](#macos-and-linux-under-wine)). `--mute` for
   silent runs.
 
@@ -59,6 +59,7 @@ for comparison.
 | Playtest suite (`tools/playtest.py`) | **29 cases**: every main-menu entry (LAN, Internet and World Domination Tour as far as they go without servers, Back, Exit) and the Options screens, save and load, skirmish 640x400 to 4K, the four campaigns, a base built and an infantryman trained in a mission and in a skirmish (the MCV deployed), band selection and force-fire, HD vehicles and voxel debris on; all pass, three at a time ([testing.md](docs/testing.md)) |
 | Conformance (`tools/conformance.py`) | **8/8** boot milestones to the choice screen, lift 0 errors |
 | Native Linux (`build-linux/ts`, pcrecomp `win32hle`) | the same lift as a Linux program, no Wine: boot, menus and dialogs, campaigns, skirmishes to 4K, saves, HD vehicles; the playtest suite in Docker ([Linux, native](#linux-native)) |
+| Native macOS (`build-macos/ts`, pcrecomp `win32hle`) | the same lift as an arm64 Mac program, no Wine or Rosetta: the guest's memory one block of a 64-bit host's; the playtest suite at 34 of 34 on Apple silicon ([macOS, native](#macos-native)) |
 | Presenter (the default display) | the game in its own Direct3D 11 window, from redalert2-recomp: sharp scaling, blurred bars, clicks mapped into the game; checked with the menus ([presenter.md](docs/presenter.md)) |
 | HD vehicles | units, their shadows and voxel debris at 2x, Red Alert 2's four half-pixel passes found again in this renderer ([voxels.md](docs/voxels.md)) |
 | macOS and Linux, under Wine | the Windows build cross-compiled with clang-cl and xwin, played under Wine or CrossOver: 29 of 29 under Wine 10.0 ([macOS and Linux, under Wine](#macos-and-linux-under-wine)) |
@@ -97,7 +98,7 @@ You need **your own copy of Tiberian Sun and Firestorm**: the Steam build
 Nothing from the game is in this repository and nothing is downloaded for
 you. The lifted C is generated on your machine from your copy and is never
 distributed. On Linux, see [Linux, native](#linux-native); on macOS,
-[macOS and Linux, under Wine](#macos-and-linux-under-wine).
+[macOS, native](#macos-native).
 
 ### The installer (easiest)
 
@@ -110,8 +111,8 @@ distributed. On Linux, see [Linux, native](#linux-native); on macOS,
 
 The first build takes 30 to 60 minutes and about 6 GB; it installs the tools
 it needs (on Windows, Visual Studio's Build Tools, asking for permission
-once). On a Mac it builds the Windows game for CrossOver, with the game
-installed in a CrossOver bottle. The installers aren't signed yet: on
+once). On a Mac it builds the game as a native Mac program, with Homebrew
+and Xcode's command line tools. The installers aren't signed yet: on
 Windows, SmartScreen asks first (**More info**, then **Run anyway**); on a
 Mac, right-click it and pick **Open**.
 
@@ -231,6 +232,38 @@ CHANGELOG for the run); it also runs in a window on an Xfce desktop with
 PulseAudio. Not on this host: `--original` (it runs the shipping machine code
 on Windows).
 
+### macOS, native
+
+`build-macos/ts` is a native Mac program, arm64 on Apple silicon: the same
+lifted C and the same win32hle as [Linux, native](#linux-native), with no
+Wine, CrossOver or Rosetta. A Mac runs only 64-bit programs, so the guest's
+32-bit memory is one 4 GB block of the host's (pcrecomp's
+`runtime/win32hle/README.md`, *Guest memory*), at a fixed address
+(`TS_MEM_BASE`, 16 TB up) so the lifted code adds a constant to every
+address. The game is your copy: Steam for Windows in a CrossOver bottle, the
+Mac Steam library, or a folder anywhere (`game/` a link to it).
+
+```
+./setup.sh
+```
+
+checks for Xcode's command line tools and offers to install Homebrew's
+`cmake ninja pkgconf sdl2 sdl2_ttf uv`, finds the game, catalogs and lifts
+it, builds it with `build-macos.sh`, and leaves `Tiberian Sun
+(recomp).command` here to double-click. By hand:
+
+```
+./build-macos.sh
+build-macos/ts --run
+```
+
+The command line, the window (F10, F11, F12), `ts.ini` and the mods (F9) are
+the Linux host's. On an Apple silicon Mac the playtest suite passes 34 of 34,
+from the main menus and Options screens through the four campaigns, a base
+built, HD vehicles and skirmishes from 640x400 to 4K (`tools/playtest.py`
+runs the native build when it is there). LAN play is win32hle's, as on Linux,
+and not yet tried between a Mac and another machine.
+
 ### macOS and Linux, under Wine
 
 The same `ts.exe`, cross-compiled with clang-cl and played under Wine:
@@ -240,7 +273,7 @@ CrossOver bottle; on Linux, from Steam (which runs it with Proton) or have the
 folder anywhere. Then:
 
 ```
-./setup.sh
+./setup.sh --wine
 ```
 
 On a Mac it checks for and offers to install Homebrew's `llvm`, `lld`,
@@ -267,7 +300,8 @@ playtests tell Wine to load (`WINEDLLOVERRIDES=wsock32=n,b`). Under Wine 10.0
 on Debian 13 (x86-64) the playtest suite passes all 29 cases. Not yet under Wine:
 recordings (`--record` starts `ffmpeg` through Wine's `cmd`, which cannot run
 a Linux or Mac program; the frame checksums the tests count still come out),
-and `--original` is untested. Not yet tried on a Mac.
+and `--original` is untested. Not yet tried on a Mac, where the native build
+is the default.
 
 The Mac and Linux build is ported from the one
 [@cpressland](https://github.com/cpressland) wrote for Red Alert 2

@@ -60,6 +60,7 @@ Tiberian Sun (recomp).sh
 build-trace/
 build-clang/
 build-linux/
+build-macos/
 
 # LAN game frames (tools/lan/*.args)
 lan-frames/

@@ -46,8 +46,9 @@ from concurrent.futures import ThreadPoolExecutor
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # TS_EXE: another build of the host to test (a clang-cl build, an A/B variant).
-# On Linux the native host (build-linux.sh) is the default once it is built.
-NATIVE_HOST = os.path.join(ROOT, 'build-linux', 'ts')
+# Off Windows the native host (build-linux.sh, build-macos.sh) is the default
+# once it is built.
+NATIVE_HOST = os.path.join(ROOT, 'build-macos' if sys.platform == 'darwin' else 'build-linux', 'ts')
 HOST = os.environ.get('TS_EXE') or (NATIVE_HOST if os.name != 'nt' and os.path.exists(NATIVE_HOST)
                                     else os.path.join(ROOT, 'build', 'ts.exe'))
 NATIVE = os.name != 'nt' and not HOST.lower().endswith('.exe')
@@ -346,7 +347,7 @@ def farm(d, ini=None):
 
     The game writes into its folder (SUN.INI, saves, debug files), so cases
     sharing one would clobber each other; links cost no space. SUN.INI is
-    copied, with the intro off: four minutes of cinematic before every case
+    copied, with the first-time intro off: a minute of cinematic before every case
     is a waste, and the intro has its own case in tools/conformance.py.
     """
     src = os.path.join(ROOT, 'game')
@@ -359,7 +360,10 @@ def farm(d, ini=None):
                 if os.path.exists(t):
                     os.remove(t)
                 text = open(os.path.join(dirpath, f), 'rb').read()
-                text = re.sub(rb'(?im)^Play=\w+', b'Play=no', text)
+                # [Intro] PlaySide00 and 01 (0x004E05B9), yes in a fresh
+                # install until the first-time intro has played once
+                for side in ('PlaySide00', 'PlaySide01'):
+                    text = set_ini(text, 'Intro', side, 'no')
                 for sec, kv in (ini or {}).items():
                     for k, v in kv.items():
                         text = set_ini(text, sec, k, v)

@@ -5,6 +5,49 @@ versions follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **macOS, natively** (no Wine or CrossOver): `build-macos/ts`, an arm64
+  Mac program on pcrecomp's win32hle, the same lifted C and host as Linux.
+  A Mac runs only 64-bit programs, so the guest's 32-bit memory is one 4 GB
+  block of the host's (win32hle's `guest_mem.c`), at a fixed address
+  (`TS_MEM_BASE`, 16 TB up). `build-macos.sh` builds it; `setup.sh` on a Mac
+  now builds it by default (Xcode's command line tools and Homebrew's
+  `cmake ninja pkgconf sdl2 sdl2_ttf uv`) and leaves
+  `Tiberian Sun (recomp).command`, and looks for the game in the Mac Steam
+  library too; `--wine` keeps the CrossOver build. Ported from Red Alert 2's
+  (redalert2-recomp #16):
+  - `CMakeLists.txt`: Linux or macOS, 32- or 64-bit; `RECOMP_FLAT_MEMORY`
+    only where pointers are 32-bit.
+  - `hdvox.c`: the game's addresses through `GPTR`/`GVA` (the plain casts on
+    Windows; `hle_ptr`/`hle_va` off it).
+  - the host: the game's debug printf through `hle_guest_format`, and the
+    program's own path from `hle_exe_path` (no `/proc` on a Mac).
+  - `tools/playtest.py` runs `build-macos/ts` on a Mac when it is built.
+
+  Tested on Apple silicon: `./setup.sh --yes` in a checkout with no lift cataloged,
+  lifted (21,369 functions, 0 errors) and built it, and the playtest suite
+  passes 34 of 34, three at a time.
+
+### Fixed
+- **A crash while scrolling in battle** (a bus error drawing the sidebar or
+  the cursor at a small address): `DSurface::Unlock` (`0x0048B4D0`) set the
+  lock count to 0, called `IDirectDrawSurface::Unlock`, and only then cleared
+  the cached pixel pointer. The mouse's timer thread (`0x00489290`) draws
+  the cursor through the same surfaces, and on the native host an import is
+  where a waiting thread takes the machine: a cursor drawn during that call
+  locked the surface afresh, the clear then wiped its pointer, and the next
+  lock reused the 0. The pointer is now cleared before the call, with the
+  count (`run_lift.py` PATCHES). Seen on a Mac, scrolling with the right
+  button held in the first GDI mission. A scripted right-drag in that
+  mission (the mouse moving every 2 ms) crashed the unpatched build once in
+  29 minutes of play across three runs, and the patched one not at all in
+  90 minutes across six.
+- **The playtests on a fresh install**: a case's `SUN.INI` now has
+  `[Intro] PlaySide00=no` and `PlaySide01=no`, which is what turns off the
+  first-time intro (`0x004E05B9`). The runner rewrote `Play=`, Red Alert 2's
+  key, which Tiberian Sun does not read, so on an install that had never
+  booted every case sat through a minute of the EVA intro and timed out.
+
 ## [0.1.0-alpha.2] - 2026-10-21
 
 ### Added

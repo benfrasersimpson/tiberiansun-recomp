@@ -109,6 +109,17 @@ PATCHES = {
     0x006A898E: '{ extern unsigned ts_clip_rounds; if (++ts_clip_rounds > 64) goto L_006A8B2C; } /* line clip cap */',
     0x006A8AE9: '{ extern unsigned ts_clip_rounds; ts_clip_rounds = 0; } /* line clip cap */',
     0x006A8B2C: '{ extern unsigned ts_clip_rounds; ts_clip_rounds = 0; } /* line clip cap */',
+    # DSurface::Unlock (0x0048B4D0) drops the lock count to 0, calls
+    # IDirectDrawSurface::Unlock, and only then clears the cached pixel
+    # pointer (+0x14). The mouse's timer thread (0x00489290) draws through the
+    # same surfaces, and an import is where a waiting thread gets the machine:
+    # one that locked the surface during that call left count 1 and a pointer,
+    # which the clear then wiped, and the next Lock (0x0048B370) took the
+    # cached 0 and blitted the sidebar to y * pitch + x (a crash in the first
+    # GDI mission, on a Mac). The pointer is cleared before the call instead,
+    # with the count, and left alone after it.
+    0x0048B4EA: 'MEM32(esi + 0x14) = 0; /* fix: run_lift.py PATCHES */',
+    0x0048B4F1: 'RECOMP_FLAGS_IN(); goto L_0048B4FE; /* fix: run_lift.py PATCHES */',
 }
 
 
